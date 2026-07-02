@@ -108,3 +108,21 @@ Scripts are testable headless against the user's live tmux server: `list`, `coun
   per-machine setup in `~/.claude/settings.json` and goes stale when hooks misfire;
   on-demand capture-pane sniffing is accurate enough and always fresh.
 - **tmux native `choose-tree`**: no agent filtering, no status, no live preview styling.
+
+## Addendum (2026-07-02, later): six-state model
+
+User requested the state model match Claude Code's agent view: needs input / failed /
+stopped / working / completed / idle, grouped in the picker. Verified against live panes
+that all six are detectable from screen content alone (no hooks):
+
+- completed: turn summary line `✻ <Verb>ed for <duration>` (Worked/Churned/Cooked…) or
+  `※ recap:` — must exclude lines containing `…`, since working spinner lines like
+  `(… · thought for 8s)` also contain "<word> for <n>".
+- stopped: `Interrupted` marker Claude Code leaves after esc/ctrl-c.
+- failed: `API Error` / rate-limit / timeout / auth error text.
+- Resolution: bottom-most matching marker in the last 30 screen lines wins.
+
+Hooks (`Stop`/`StopFailure`/`TaskCompleted`, verified against current hooks docs) were
+considered and rejected again: screen heuristics cover all six states with acceptable
+fidelity and keep the zero-config design. Picker renders one dim header line per state
+group; selecting a header reopens the picker instead of jumping.

@@ -60,25 +60,39 @@ scan() {
     local status rank
     status="$(pane_status "$pane_id")"
     case "$status" in
-      waiting) rank=0 ;;
-      busy)    rank=1 ;;
-      *)       rank=2 ;;
+      needs_input) rank=0 ;;
+      failed)      rank=1 ;;
+      stopped)     rank=2 ;;
+      working)     rank=3 ;;
+      completed)   rank=4 ;;
+      *)           rank=5 ;;
     esac
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$pane_id" "$rank" "$status" "$session" "$win_idx" "$win_name" "$title" "$path"
   done | sort -t '	' -k2,2n -k4,4 -k5,5n
 }
 
-pane_status() { # <pane_id> -> waiting | busy | idle
-  local tail_lines
-  tail_lines="$(tmux capture-pane -p -t "$1" 2>/dev/null | tail -n 25)"
-  if printf '%s' "$tail_lines" | grep -qE 'Do you want|Would you like|❯ 1\. Yes'; then
-    printf 'waiting'
-  elif printf '%s' "$tail_lines" | grep -qE 'esc to interrupt|^ ?(✻|✽|✶|✳|✢|✺|·) [A-Z][A-Za-z]+…'; then
-    printf 'busy'
-  else
-    printf 'idle'
-  fi
+# Six states, mirroring Claude Code's agent view, from screen content alone.
+# The marker CLOSEST TO THE BOTTOM of the screen wins (later lines describe
+# the most recent event), so a permission dialog below a spinner reads as
+# needs_input, and a spinner below an old turn summary reads as working.
+pane_status() { # <pane_id> -> needs_input|failed|stopped|working|completed|idle
+  tmux capture-pane -p -t "$1" 2>/dev/null | tail -n 30 | awk '
+    # permission dialog, plan approval, or a numbered question (AskUserQuestion)
+    /Do you want|Would you like|❯ [0-9]+\./                  { s = "needs_input"; next }
+    # turn aborted by an API/tool error
+    /API Error|Request timed out|OAuth token|Credit balance|overloaded_error|rate.?limit/ \
+                                                             { s = "failed"; next }
+    # user pressed esc/ctrl-c mid-turn
+    /⎿ *Interrupted|Interrupted by user/                     { s = "stopped"; next }
+    # generating / running tools: spinner word + "… (" or the interrupt hint
+    /esc to interrupt|(✻|✽|✶|✳|✢|✺|·) .*… ?\(/               { s = "working"; next }
+    # turn finished: "✻ Worked for 1m 5s" summary or a "※ recap:" line.
+    # !/…/ keeps spinner lines like "(… · thought for 8s)" out of here.
+    (/(✻|✽|✶|✳|✢|✺) [A-Za-z]+ for [0-9]/ && !/…/) || /※ recap:/ \
+                                                             { s = "completed"; next }
+    END { print (s != "" ? s : "idle") }
+  '
 }
 
 # ---------------------------------------------------------------- rendering
@@ -103,16 +117,33 @@ fit() { # <str> <width>
   printf '%s%*s' "$s" "$((max - w))" ''
 }
 
-# Colored fzf lines: "pane_id \t <display>"
+style() { # <status> -> "icon<TAB>label<TAB>ansi color"
+  case "$1" in
+    needs_input) printf '▲\tneeds input\t\033[1;33m' ;;
+    failed)      printf '✖\tfailed\t\033[1;31m' ;;
+    stopped)     printf '■\tstopped\t\033[1;35m' ;;
+    working)     printf '✻\tworking\t\033[1;36m' ;;
+    completed)   printf '✔\tcompleted\t\033[1;32m' ;;
+    *)           printf '○\tidle\t\033[2m' ;;
+  esac
+}
+
+# Colored fzf lines: "pane_id \t <display>", grouped under one header per state.
+# Header lines have an empty pane_id field; picker() skips them on enter.
 # AGENT_JUMP_CURRENT (optional) marks the pane the popup was opened from.
 list() {
+  local prev_status=''
   scan | while IFS='	' read -r pane_id rank status session win_idx win_name title path; do
-    local color label branch here
-    case "$status" in
-      waiting) color='\033[1;33m' label='▲ needs you' ;;
-      busy)    color='\033[1;36m' label='✻ working  ' ;;
-      *)       color='\033[2m'    label='○ idle     ' ;;
-    esac
+    local icon label color branch here
+    IFS='	' read -r icon label color <<EOF
+$(style "$status")
+EOF
+
+    if [ "$status" != "$prev_status" ]; then
+      [ -n "$prev_status" ] && printf '\t\n'
+      printf '\t%b%s %s\033[0m\n' "$color" "$icon" "$label"
+      prev_status="$status"
+    fi
 
     # Claude Code sets pane_title to the conversation topic; the default shell
     # title looks like "user@host: path" — fall back to the window name then.
@@ -124,29 +155,31 @@ list() {
     here='  '; [ "$pane_id" = "${AGENT_JUMP_CURRENT:-}" ] && here='◂ '
 
     printf '%s\t%s%b%s\033[0m  \033[1m%s\033[0m  %s  \033[2m%s%s\033[0m\n' \
-      "$pane_id" "$here" "$color" "$label" \
+      "$pane_id" "$here" "$color" "$icon" \
       "$(fit "$session:$win_idx" 14)" "$(fit "$title" 34)" \
       "${branch:+⎇ $branch · }" "${path/#"$HOME"/\~}"
   done
 }
 
-counts() { # -> "busy waiting idle"
-  scan | awk -F '\t' '
-    $3 == "busy"    { b++ }
-    $3 == "waiting" { w++ }
-    $3 == "idle"    { i++ }
-    END { print b+0, w+0, i+0 }'
+counts() { # -> "needs_input failed stopped working completed idle"
+  scan | awk -F '\t' '{ c[$3]++ }
+    END { printf "%d %d %d %d %d %d\n",
+          c["needs_input"], c["failed"], c["stopped"],
+          c["working"], c["completed"], c["idle"] }'
 }
 
 # status-right segment (tmux format markup)
 status_line() {
-  local b w i out=''
-  read -r b w i <<EOF
+  local n f s w c i out=''
+  read -r n f s w c i <<EOF
 $(counts)
 EOF
-  [ "$((b + w + i))" -eq 0 ] && return 0
-  [ "$w" -gt 0 ] && out="$out#[fg=yellow,bold]▲$w#[default] "
-  [ "$b" -gt 0 ] && out="$out#[fg=cyan]✻$b#[default] "
+  [ "$((n + f + s + w + c + i))" -eq 0 ] && return 0
+  [ "$n" -gt 0 ] && out="$out#[fg=yellow,bold]▲$n#[default] "
+  [ "$f" -gt 0 ] && out="$out#[fg=red,bold]✖$f#[default] "
+  [ "$s" -gt 0 ] && out="$out#[fg=magenta]■$s#[default] "
+  [ "$w" -gt 0 ] && out="$out#[fg=cyan]✻$w#[default] "
+  [ "$c" -gt 0 ] && out="$out#[fg=green]✔$c#[default] "
   [ "$i" -gt 0 ] && out="$out#[fg=colour244]○$i#[default] "
   printf '%s' "${out% }"
 }
@@ -155,34 +188,40 @@ EOF
 
 picker() {
   local lines sel pane_id
-  lines="$(list)"
-
-  if [ -z "$lines" ]; then
-    printf '\n   No agent panes found.\n\n   (pattern: %s)\n\n   press any key to close' \
-      "$(opt @agent-jump-pattern "$DEFAULT_PATTERN")"
-    read -rsn1
-    return 0
-  fi
-
   if ! command -v fzf >/dev/null 2>&1; then
     printf '\n   tmux-agent-jump needs fzf:  brew install fzf\n\n   press any key to close'
     read -rsn1
     return 0
   fi
 
-  sel="$(printf '%s\n' "$lines" | fzf \
-    --ansi --reverse --no-info --cycle \
-    --delimiter='\t' --with-nth=2.. \
-    --prompt='  ' --pointer='▌' \
-    --header='enter jump · ctrl-r refresh · esc close' \
-    --header-first \
-    --color='header:dim,pointer:cyan,hl:cyan,hl+:cyan,bg+:236,gutter:-1,border:240' \
-    --preview="tmux capture-pane -ep -t {1}" \
-    --preview-window='right,55%,border-left' \
-    --bind="ctrl-r:reload('$SELF' list)")" || return 0
+  while :; do
+    lines="$(list)"
 
-  pane_id="${sel%%	*}"
-  [ -n "$pane_id" ] && jump "$pane_id"
+    if [ -z "$lines" ]; then
+      printf '\n   No agent panes found.\n\n   (pattern: %s)\n\n   press any key to close' \
+        "$(opt @agent-jump-pattern "$DEFAULT_PATTERN")"
+      read -rsn1
+      return 0
+    fi
+
+    sel="$(printf '%s\n' "$lines" | fzf \
+      --ansi --reverse --no-info --cycle \
+      --delimiter='\t' --with-nth=2.. \
+      --prompt='  ' --pointer='▌' \
+      --header='enter jump · ctrl-r refresh · esc close' \
+      --header-first \
+      --color='header:dim,pointer:cyan,hl:cyan,hl+:cyan,bg+:236,gutter:-1,border:240' \
+      --preview="tmux capture-pane -ep -t {1}" \
+      --preview-window='right,55%,border-left' \
+      --bind="ctrl-r:reload('$SELF' list)")" || return 0
+
+    pane_id="${sel%%	*}"
+    if [ -n "$pane_id" ]; then
+      jump "$pane_id"
+      return 0
+    fi
+    # a group header / separator was selected — reopen the picker
+  done
 }
 
 jump() { # <pane_id>
