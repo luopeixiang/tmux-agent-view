@@ -17,12 +17,16 @@ opt() { # opt <@option> <default>
 
 # Emit one line per agent pane:
 #   pane_id \t rank \t status \t session \t win_idx \t win_name \t title \t path
+#   \t session_last_attached \t window_stack_index
+# Within a state group, order is LRU by user visits: sessions by most recent
+# attach/switch, windows by the session's window stack (0 = most recently
+# visited). Both are driven only by user navigation, never by agent output.
 scan() {
   local pattern
   pattern="$(opt @agent-jump-pattern "$DEFAULT_PATTERN")"
 
   tmux list-panes -a \
-    -F '#{pane_id}	#{pane_pid}	#{session_name}	#{window_index}	#{window_name}	#{pane_title}	#{pane_current_path}' |
+    -F '#{pane_id}	#{pane_pid}	#{session_name}	#{window_index}	#{window_name}	#{pane_title}	#{pane_current_path}	#{session_last_attached}	#{window_stack_index}' |
   awk -v pat="$pattern" '
     BEGIN {
       FS = OFS = "\t"
@@ -52,11 +56,11 @@ scan() {
         for (j = 1; j <= m; j++) if (ch[j] != "") queue[++n] = ch[j]
         if (n > 512) break
       }
-      if (found) print $1, $3, $4, $5, $6, $7
+      if (found) print $1, $3, $4, $5, $6, $7, $8, $9
       delete queue
     }
   ' |
-  while IFS='	' read -r pane_id session win_idx win_name title path; do
+  while IFS='	' read -r pane_id session win_idx win_name title path attached stack; do
     local status rank
     status="$(pane_status "$pane_id")"
     case "$status" in
@@ -67,9 +71,10 @@ scan() {
       completed)   rank=4 ;;
       *)           rank=5 ;;
     esac
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$pane_id" "$rank" "$status" "$session" "$win_idx" "$win_name" "$title" "$path"
-  done | sort -t '	' -k2,2n -k4,4 -k5,5n
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$pane_id" "$rank" "$status" "$session" "$win_idx" "$win_name" "$title" "$path" \
+      "$attached" "$stack"
+  done | sort -t '	' -k2,2n -k9,9nr -k10,10n -k5,5n
 }
 
 # Six states, mirroring Claude Code's agent view, from screen content alone.
@@ -133,7 +138,7 @@ style() { # <status> -> "icon<TAB>label<TAB>ansi color"
 # AGENT_JUMP_CURRENT (optional) marks the pane the popup was opened from.
 list() {
   local prev_status=''
-  scan | while IFS='	' read -r pane_id rank status session win_idx win_name title path; do
+  scan | while IFS='	' read -r pane_id rank status session win_idx win_name title path attached stack; do
     local icon label color branch here
     IFS='	' read -r icon label color <<EOF
 $(style "$status")

@@ -126,3 +126,16 @@ Hooks (`Stop`/`StopFailure`/`TaskCompleted`, verified against current hooks docs
 considered and rejected again: screen heuristics cover all six states with acceptable
 fidelity and keep the zero-config design. Picker renders one dim header line per state
 group; selecting a header reopens the picker instead of jumping.
+
+## Addendum (2026-07-02, later): LRU ordering within state groups
+
+Within a state group, panes are ordered by the user's most recent visits, most recent
+first. No state file needed — tmux already tracks user navigation:
+
+- `session_last_attached` (epoch): bumped when a client attaches or switch-clients to
+  the session — sort descending across sessions.
+- `window_stack_index`: the session's most-recently-visited window stack (0 = current);
+  bumped only by select-window — sort ascending within a session.
+
+Both are immune to agent output (unlike `window_activity`), so a chatty agent can't
+jump the queue; jumping via the picker itself naturally refreshes the order.

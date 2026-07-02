@@ -39,7 +39,10 @@ sidebar pane fed by agent hooks. tmux-agent-jump takes the opposite approach:
 
 Six states, mirroring [Claude Code's agent view](https://code.claude.com/docs/en/agent-view),
 detected purely from each pane's screen content — no hooks needed. The picker groups
-agents by state; states that need you sort first.
+agents by state; states that need you sort first. Within a group, agents are ordered
+by your most recent visits (LRU): tmux's session attach times and per-session window
+stacks, both driven only by your navigation — an agent spamming output never jumps
+the queue.
 
 | state | meaning | detected by |
 |---|---|---|
