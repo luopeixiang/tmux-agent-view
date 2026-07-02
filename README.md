@@ -56,7 +56,7 @@ sidebar pane fed by agent hooks. tmux-agent-jump takes the opposite approach:
 With [TPM](https://github.com/tmux-plugins/tpm):
 
 ```tmux
-set -g @plugin 'peixiangluo/tmux-agent-jump'
+set -g @plugin 'luopeixiang/tmux-agent-jump'
 ```
 
 Or manually — clone anywhere and add to `~/.tmux.conf`:
