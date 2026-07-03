@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tmux-agent-jump — list AI agent panes across all tmux sessions and jump to them.
+# tmux-agent-view — list AI agent panes across all tmux sessions and jump to them.
 # bash 3.2 compatible (macOS system bash). No daemon, no state, no hooks.
 
 set -u
@@ -23,7 +23,7 @@ opt() { # opt <@option> <default>
 # visited). Both are driven only by user navigation, never by agent output.
 scan() {
   local pattern
-  pattern="$(opt @agent-jump-pattern "$DEFAULT_PATTERN")"
+  pattern="$(opt @agent-view-pattern "$DEFAULT_PATTERN")"
 
   tmux list-panes -a \
     -F '#{pane_id}	#{pane_pid}	#{session_name}	#{window_index}	#{window_name}	#{pane_title}	#{pane_current_path}	#{session_last_attached}	#{window_stack_index}' |
@@ -194,7 +194,7 @@ EOF
 picker() {
   local lines sel pane_id
   if ! command -v fzf >/dev/null 2>&1; then
-    printf '\n   tmux-agent-jump needs fzf:  brew install fzf\n\n   press any key to close'
+    printf '\n   tmux-agent-view needs fzf:  brew install fzf\n\n   press any key to close'
     read -rsn1
     return 0
   fi
@@ -204,7 +204,7 @@ picker() {
 
     if [ -z "$lines" ]; then
       printf '\n   No agent panes found.\n\n   (pattern: %s)\n\n   press any key to close' \
-        "$(opt @agent-jump-pattern "$DEFAULT_PATTERN")"
+        "$(opt @agent-view-pattern "$DEFAULT_PATTERN")"
       read -rsn1
       return 0
     fi
@@ -241,8 +241,8 @@ jump() { # <pane_id>
 
 popup() {
   local w h cur
-  w="$(opt @agent-jump-width 90%)"
-  h="$(opt @agent-jump-height 75%)"
+  w="$(opt @agent-view-width 90%)"
+  h="$(opt @agent-view-height 75%)"
   # run-shell context: resolves to the pane the keybinding was pressed in
   cur="$(tmux display-message -p '#{pane_id}' 2>/dev/null)"
   tmux display-popup -E -b rounded -S 'fg=colour240' -T ' ✻ agents ' \
@@ -259,5 +259,5 @@ case "${1:-popup}" in
   picker) picker ;;
   jump)   jump "${2:?pane_id required}" ;;
   popup)  popup ;;
-  *)      echo "usage: agent-jump.sh [popup|picker|list|counts|status|jump <pane_id>]" >&2; exit 1 ;;
+  *)      echo "usage: agent-view.sh [popup|picker|list|counts|status|jump <pane_id>]" >&2; exit 1 ;;
 esac

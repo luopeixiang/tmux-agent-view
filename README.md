@@ -1,7 +1,8 @@
-# tmux-agent-jump
+# tmux-agent-view
 
-Jump to any AI agent pane across all your tmux sessions — one keystroke, one picker,
-zero configuration.
+[Claude Code's agent view](https://code.claude.com/docs/en/agent-view), for tmux —
+see every AI agent across all your sessions and jump to any of them in one keystroke.
+Zero configuration.
 
 ```
 ┌────────────────────────── ✻ agents ───────────────────────────┐
@@ -28,7 +29,7 @@ window layouts stay exactly as they were.
 
 Plugins like [tmux-agent-sidebar](https://github.com/hiroppy/tmux-agent-sidebar) and
 [tmux-agent-status](https://github.com/samleeney/tmux-agent-status) keep a persistent
-sidebar pane fed by agent hooks. tmux-agent-jump takes the opposite approach:
+sidebar pane fed by agent hooks. tmux-agent-view takes the opposite approach:
 
 - **No hooks, no daemon, no binary, no state.** A single bash script scans panes
   on demand — the picker is always live, and there is nothing to set up or go stale.
@@ -78,13 +79,13 @@ as *working*.
 With [TPM](https://github.com/tmux-plugins/tpm):
 
 ```tmux
-set -g @plugin 'luopeixiang/tmux-agent-jump'
+set -g @plugin 'luopeixiang/tmux-agent-view'
 ```
 
 Or manually — clone anywhere and add to `~/.tmux.conf`:
 
 ```tmux
-run-shell /path/to/tmux-agent-jump/agent-jump.tmux
+run-shell /path/to/tmux-agent-view/agent-view.tmux
 ```
 
 Reload tmux (`tmux source ~/.tmux.conf`), then press `prefix + a`.
@@ -95,18 +96,18 @@ Set in `~/.tmux.conf` before the plugin line:
 
 | option | default | description |
 |---|---|---|
-| `@agent-jump-key` | `a` | key after prefix that opens the picker |
-| `@agent-jump-status` | `on` | prepend the agent summary to `status-right` |
-| `@agent-jump-pattern` | `claude\|codex\|opencode\|aider` | regex matched against pane child processes |
-| `@agent-jump-width` | `90%` | popup width |
-| `@agent-jump-height` | `75%` | popup height |
+| `@agent-view-key` | `a` | key after prefix that opens the picker |
+| `@agent-view-status` | `on` | prepend the agent summary to `status-right` |
+| `@agent-view-pattern` | `claude\|codex\|opencode\|aider` | regex matched against pane child processes |
+| `@agent-view-width` | `90%` | popup width |
+| `@agent-view-height` | `75%` | popup height |
 
 Example:
 
 ```tmux
-set -g @agent-jump-key 'g'
-set -g @agent-jump-status 'off'
-set -g @agent-jump-pattern 'claude|goose'
+set -g @agent-view-key 'g'
+set -g @agent-view-status 'off'
+set -g @agent-view-pattern 'claude|goose'
 ```
 
 ## Keys inside the picker

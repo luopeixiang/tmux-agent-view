@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# tmux-agent-jump — TPM entry point
+# tmux-agent-view — TPM entry point
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT="$CURRENT_DIR/scripts/agent-jump.sh"
+SCRIPT="$CURRENT_DIR/scripts/agent-view.sh"
 
 get_opt() {
   local v
@@ -10,14 +10,14 @@ get_opt() {
   printf '%s' "${v:-$2}"
 }
 
-key="$(get_opt @agent-jump-key 'a')"
+key="$(get_opt @agent-view-key 'a')"
 tmux bind-key "$key" run-shell "$SCRIPT popup"
 
 # Append the agent summary to status-right once (idempotent).
-if [ "$(get_opt @agent-jump-status 'on')" = "on" ]; then
+if [ "$(get_opt @agent-view-status 'on')" = "on" ]; then
   status_right="$(tmux show-option -gv status-right)"
   case "$status_right" in
-    *agent-jump.sh*) ;;
+    *agent-view.sh*) ;;
     *) tmux set-option -g status-right "#($SCRIPT status) $status_right" ;;
   esac
 fi
